@@ -24,14 +24,29 @@ def get_steps_keyboard():
     kb.add("ℹ️ Инфо")
     return kb
 
+def get_subscribe_keyboard():
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🔗 Перейти к каналу", url="https://t.me/sunxstyle"))
+    kb.add(InlineKeyboardButton("✅ Я подписался", callback_data="check_sub"))
+    return kb
+
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
     if not await check_user_subscription(bot, message.from_user.id, CHANNEL_USERNAME):
-        return await message.answer("Пожалуйста, подпишись на канал @sunxstyle, чтобы продолжить.")
+        return await message.answer("Пожалуйста, подпишись на канал @sunxstyle, чтобы продолжить.", reply_markup=get_subscribe_keyboard())
     await message.answer(
         "Привет, солнце! ☀️\nТы в таймере по методу суперкомпенсации.\nКожа адаптируется к солнцу постепенно — и загар становится ровным, глубоким и без ожогов.\n\nНачинай с шага 1. Даже если уже немного загорел(а), важно пройти путь с начала.\nКаждый новый день и после перерыва — возвращайся на 2 шага назад.\n\nХочешь разобраться подробнее — жми ℹ️ Инфо. Там всё по делу.",
         reply_markup=get_start_keyboard()
     )
+
+@dp.callback_query_handler(lambda c: c.data == "check_sub")
+async def recheck_sub(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    if await check_user_subscription(bot, user_id, CHANNEL_USERNAME):
+        await bot.answer_callback_query(callback_query.id)
+        await bot.send_message(user_id, "Спасибо за подписку!", reply_markup=get_start_keyboard())
+    else:
+        await bot.answer_callback_query(callback_query.id, text="Ты всё ещё не подписан!", show_alert=True)
 
 @dp.message_handler(lambda message: message.text == "ℹ️ Инфо")
 async def info(message: types.Message):
