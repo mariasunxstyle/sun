@@ -87,7 +87,7 @@ async def handle_step(message: types.Message):
         if user_states[user_id]["cancel"]:
             return
         user_states[user_id]["pos"] = idx
-        await message.answer(f"{position} — {step_data['duration_min']} мин")
+        await message.answer(f"{position} — {step_data['duration_min']} мин", reply_markup=get_control_keyboard())
         await asyncio.sleep(1)
 
     await message.answer("✅ Шаг завершён!")
@@ -104,7 +104,7 @@ async def handle_controls(callback_query: types.CallbackQuery):
             user_states[user_id]["pos"] += 1
     elif data == "end":
         await bot.answer_callback_query(callback_query.id)
-        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_steps_keyboard())
+        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_control_keyboard())
         user_states[user_id]["cancel"] = True
     elif data == "menu":
         await bot.answer_callback_query(callback_query.id)
@@ -113,7 +113,7 @@ async def handle_controls(callback_query: types.CallbackQuery):
     elif data == "back":
         await bot.answer_callback_query(callback_query.id)
         step = max(user_states.get(user_id, {}).get("step", 3) - 2, 1)
-        await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_steps_keyboard())
+        await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_control_keyboard())
         user_states[user_id]["cancel"] = True
 
 if __name__ == "__main__":
