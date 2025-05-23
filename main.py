@@ -47,7 +47,7 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "Привет, солнце! ☀️\nТы в таймере по методу суперкомпенсации.\nКожа адаптируется к солнцу постепенно — и загар становится ровным, глубоким и без ожогов.\n\nНачинай с шага 1. Даже если уже немного загорел(а), важно пройти путь с начала.\nКаждый новый день и после перерыва — возвращайся на 2 шага назад."
     )
-    
+    await message.answer("Выбери шаг:", reply_markup=get_steps_keyboard())
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub")
 async def recheck_sub(callback_query: types.CallbackQuery):
@@ -55,7 +55,7 @@ async def recheck_sub(callback_query: types.CallbackQuery):
     if await check_user_subscription(bot, user_id, CHANNEL_USERNAME):
         await bot.answer_callback_query(callback_query.id)
         await bot.send_message(user_id, "Спасибо за подписку!")
-        
+        await bot.send_message(user_id, "Выбери шаг:", reply_markup=get_steps_keyboard())
     else:
         await bot.answer_callback_query(callback_query.id, text="Ты всё ещё не подписан!", show_alert=True)
 
@@ -81,16 +81,16 @@ async def handle_step(message: types.Message):
 
     user_id = message.from_user.id
     user_states[user_id] = {"step": step_num, "pos": 0, "cancel": False}
-    await message.answer(f"⚡️ Шаг {step_num} ({step_data['duration_min']} мин)", reply_markup=get_control_keyboard())
+    await message.answer(f"⚡️ Шаг {step_num} ({step_data['duration_min']} мин)", reply_markup=get_control_keyboard()  # standard controls with Пропустить)
 
     for idx, position in enumerate(step_data["positions"]):
         if user_states[user_id]["cancel"]:
             return
         user_states[user_id]["pos"] = idx
-        await message.answer(f"{position} — {step_data['duration_min']} мин", reply_markup=get_control_keyboard())
+        await message.answer(f"{position} — {step_data['duration_min']} мин", reply_markup=get_control_keyboard()  # standard controls with Пропустить)
         await asyncio.sleep(1)
 
-    await message.answer("✅ Шаг завершён!")
+    await message.answer("✅ Шаг завершён!")\nawait message.answer("Продолжить или выбрать другой шаг:", reply_markup=get_control_keyboard()  # standard controls with Пропустить)
     user_states.pop(user_id, None)
 
 @dp.callback_query_handler(lambda c: c.data in ["skip", "end", "menu", "back"])
@@ -104,17 +104,31 @@ async def handle_controls(callback_query: types.CallbackQuery):
             user_states[user_id]["pos"] += 1
     elif data == "end":
         await bot.answer_callback_query(callback_query.id)
-        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_control_keyboard())
+        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_steps_keyboard())
         user_states[user_id]["cancel"] = True
     elif data == "menu":
         await bot.answer_callback_query(callback_query.id)
-        
+        await bot.send_message(user_id, "Выбери шаг:", reply_markup=get_steps_keyboard())
         user_states[user_id]["cancel"] = True
+    elif data == "continue":
+        await bot.answer_callback_query(callback_query.id)
+        await bot.send_message(user_id, "Выбери шаг:", reply_markup=get_steps_keyboard())
+        user_states.pop(user_id, None)
     elif data == "back":
         await bot.answer_callback_query(callback_query.id)
         step = max(user_states.get(user_id, {}).get("step", 3) - 2, 1)
-        await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_control_keyboard())
+        await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_steps_keyboard())
         user_states[user_id]["cancel"] = True
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+
+def get_post_step_keyboard():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("▶️ Продолжить", callback_data="continue"),
+        InlineKeyboardButton("⛔ Завершить", callback_data="end"),
+        InlineKeyboardButton("↩️ Назад на 2 шага", callback_data="back"),
+        InlineKeyboardButton("📋 Вернуться к шагам", callback_data="menu")
+    )
+    return kb
