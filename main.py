@@ -14,16 +14,12 @@ CHANNEL_USERNAME = os.getenv("CHANNEL")
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
-
 user_states = {}
-
-def get_start_keyboard():
-    return types.ReplyKeyboardMarkup(resize_keyboard=True).add("📋 Шаги", "ℹ️ Инфо")
 
 def get_steps_keyboard():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    buttons = [types.KeyboardButton(f"Шаг {step['step']} ({step['duration_min']}м)") for step in steps]
-    kb.add(*buttons)
+    for step in steps:
+        kb.insert(types.KeyboardButton(f"Шаг {step['step']} ({step['duration_min']}м)"))
     kb.add("ℹ️ Инфо")
     return kb
 
@@ -47,17 +43,19 @@ def get_control_keyboard():
 async def cmd_start(message: types.Message):
     if not await check_user_subscription(bot, message.from_user.id, CHANNEL_USERNAME):
         return await message.answer("Пожалуйста, подпишись на канал @sunxstyle, чтобы продолжить.", reply_markup=get_subscribe_keyboard())
+
     await message.answer(
-        "Привет, солнце! ☀️\nТы в таймере по методу суперкомпенсации.\nКожа адаптируется к солнцу постепенно — и загар становится ровным, глубоким и без ожогов.\n\nНачинай с шага 1. Даже если уже немного загорел(а), важно пройти путь с начала.\nКаждый новый день и после перерыва — возвращайся на 2 шага назад.\n\nХочешь разобраться подробнее — жми ℹ️ Инфо. Там всё по делу.",
-        reply_markup=get_start_keyboard()
+        "Привет, солнце! ☀️\nТы в таймере по методу суперкомпенсации.\nКожа адаптируется к солнцу постепенно — и загар становится ровным, глубоким и без ожогов.\n\nНачинай с шага 1. Даже если уже немного загорел(а), важно пройти путь с начала.\nКаждый новый день и после перерыва — возвращайся на 2 шага назад.",
     )
+    await message.answer("Выбери шаг:", reply_markup=get_steps_keyboard())
 
 @dp.callback_query_handler(lambda c: c.data == "check_sub")
 async def recheck_sub(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     if await check_user_subscription(bot, user_id, CHANNEL_USERNAME):
         await bot.answer_callback_query(callback_query.id)
-        await bot.send_message(user_id, "Спасибо за подписку!", reply_markup=get_start_keyboard())
+        await bot.send_message(user_id, "Спасибо за подписку!")
+        await bot.send_message(user_id, "Выбери шаг:", reply_markup=get_steps_keyboard())
     else:
         await bot.answer_callback_query(callback_query.id, text="Ты всё ещё не подписан!", show_alert=True)
 
@@ -82,17 +80,17 @@ async def handle_step(message: types.Message):
         return await message.answer("Не удалось определить шаг.")
 
     user_id = message.from_user.id
-    user_states[user_id] = {"step": step_num, "pos": 0}
-    await message.answer(f"Шаг {step_num} — {step_data['duration_min']} минут. Следи за положением тела ⏱️", reply_markup=get_control_keyboard())
+    user_states[user_id] = {"step": step_num, "pos": 0, "cancel": False}
+    await message.answer(f"Шаг {step_num} — {step_data['duration_min']} минут", reply_markup=get_control_keyboard())
 
     for idx, position in enumerate(step_data["positions"]):
-        if user_id not in user_states or user_states[user_id].get("cancel"):
+        if user_states[user_id]["cancel"]:
             return
         user_states[user_id]["pos"] = idx
         await message.answer(f"{position} — {step_data['duration_min']} мин", reply_markup=get_control_keyboard())
-        await asyncio.sleep(1)  # заменим на таймер позже
+        await asyncio.sleep(1)  # Временно: позже заменим на точный таймер
 
-    await message.answer("✅ Шаг завершён!", reply_markup=get_start_keyboard())
+    await message.answer("✅ Шаг завершён!", reply_markup=get_steps_keyboard())
     user_states.pop(user_id, None)
 
 @dp.callback_query_handler(lambda c: c.data in ["skip", "end", "menu", "back"])
@@ -106,7 +104,7 @@ async def handle_controls(callback_query: types.CallbackQuery):
             user_states[user_id]["pos"] += 1
     elif data == "end":
         await bot.answer_callback_query(callback_query.id)
-        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_start_keyboard())
+        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_steps_keyboard())
         user_states[user_id]["cancel"] = True
     elif data == "menu":
         await bot.answer_callback_query(callback_query.id)
@@ -117,10 +115,6 @@ async def handle_controls(callback_query: types.CallbackQuery):
         step = max(user_states.get(user_id, {}).get("step", 3) - 2, 1)
         await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_steps_keyboard())
         user_states[user_id]["cancel"] = True
-
-@dp.message_handler(lambda message: message.text == "📋 Шаги")
-async def show_steps(message: types.Message):
-    await message.answer("Выбери шаг:", reply_markup=get_steps_keyboard())
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
