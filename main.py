@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 from steps import steps
 from check_subscription import check_user_subscription
+import asyncio
 
 load_dotenv()
 API_TOKEN = os.getenv("TOKEN")
@@ -13,6 +14,8 @@ CHANNEL_USERNAME = os.getenv("CHANNEL")
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
+
+user_states = {}
 
 def get_start_keyboard():
     return types.ReplyKeyboardMarkup(resize_keyboard=True).add("📋 Шаги", "ℹ️ Инфо")
@@ -28,6 +31,16 @@ def get_subscribe_keyboard():
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🔗 Перейти к каналу", url="https://t.me/sunxstyle"))
     kb.add(InlineKeyboardButton("✅ Я подписался", callback_data="check_sub"))
+    return kb
+
+def get_control_keyboard():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("⏭️ Пропустить", callback_data="skip"),
+        InlineKeyboardButton("⛔ Завершить", callback_data="end"),
+        InlineKeyboardButton("↩️ Назад на 2 шага", callback_data="back"),
+        InlineKeyboardButton("📋 Вернуться к шагам", callback_data="menu")
+    )
     return kb
 
 @dp.message_handler(commands=["start"])
@@ -62,7 +75,48 @@ async def info(message: types.Message):
 
 @dp.message_handler(lambda message: message.text.startswith("Шаг"))
 async def handle_step(message: types.Message):
-    await message.answer("Скоро будет подробный таймер. Пока только структура готова 🙂")
+    try:
+        step_num = int(message.text.split()[1])
+        step_data = next(s for s in steps if s["step"] == step_num)
+    except Exception:
+        return await message.answer("Не удалось определить шаг.")
+
+    user_id = message.from_user.id
+    user_states[user_id] = {"step": step_num, "pos": 0}
+    await message.answer(f"Шаг {step_num} — {step_data['duration_min']} минут. Следи за положением тела ⏱️", reply_markup=get_control_keyboard())
+
+    for idx, position in enumerate(step_data["positions"]):
+        if user_id not in user_states or user_states[user_id].get("cancel"):
+            return
+        user_states[user_id]["pos"] = idx
+        await message.answer(f"{position} — {step_data['duration_min']} мин", reply_markup=get_control_keyboard())
+        await asyncio.sleep(1)  # заменим на таймер позже
+
+    await message.answer("✅ Шаг завершён!", reply_markup=get_start_keyboard())
+    user_states.pop(user_id, None)
+
+@dp.callback_query_handler(lambda c: c.data in ["skip", "end", "menu", "back"])
+async def handle_controls(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    data = callback_query.data
+
+    if data == "skip":
+        await bot.answer_callback_query(callback_query.id, text="Пропускаем позицию")
+        if user_id in user_states:
+            user_states[user_id]["pos"] += 1
+    elif data == "end":
+        await bot.answer_callback_query(callback_query.id)
+        await bot.send_message(user_id, "Сеанс завершён. Можешь вернуться позже и начать заново ☀️", reply_markup=get_start_keyboard())
+        user_states[user_id]["cancel"] = True
+    elif data == "menu":
+        await bot.answer_callback_query(callback_query.id)
+        await bot.send_message(user_id, "Выбирай шаг:", reply_markup=get_steps_keyboard())
+        user_states[user_id]["cancel"] = True
+    elif data == "back":
+        await bot.answer_callback_query(callback_query.id)
+        step = max(user_states.get(user_id, {}).get("step", 3) - 2, 1)
+        await bot.send_message(user_id, f"Возвращаемся на шаг {step}", reply_markup=get_steps_keyboard())
+        user_states[user_id]["cancel"] = True
 
 @dp.message_handler(lambda message: message.text == "📋 Шаги")
 async def show_steps(message: types.Message):
